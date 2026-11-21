@@ -2,11 +2,15 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from getpass import getpass
 from shlex import split
 
 from accounts import Account
 from accounts import Accounts
+from conferences.models import Schedule
+from conferences.room import Room
+from conferences.service import Conferences
 
 
 @dataclass(frozen=True)
@@ -21,9 +25,10 @@ class Command:
 class Console:
     """Разбирает ввод, управляет текущим пользователем и выводит результаты."""
 
-    def __init__(self, accounts: Accounts) -> None:
+    def __init__(self, accounts: Accounts, conferences: Conferences) -> None:
         """Подключает операции для текущего этапа."""
         self._accounts = accounts
+        self._conferences = conferences
         self._account: Account | None = None
         self._commands = (
             Command("login EMAIL", "войти, пароль вводится отдельно", self._login),
@@ -31,6 +36,12 @@ class Console:
             Command("add-host EMAIL", "создать организатора", self._add_host),
             Command(
                 "block EMAIL STATE", "заблокировать (on) или разблокировать (off)", self._block
+            ),
+            Command("create TITLE DATE MINUTES [DESCRIPTION]", "создать встречу", self._create),
+            Command("edit ID TITLE DATE MINUTES [DESCRIPTION]", "изменить встречу", self._edit),
+            Command("list", "показать свои встречи и приглашения", self._list),
+            Command(
+                "meeting ACTION ID", "старт, отмена, завершение или замена кода", self._meeting
             ),
         )
         self._by_name = {command.syntax.split()[0]: command for command in self._commands}
@@ -99,10 +110,48 @@ class Console:
         return f"Организатор создан · {account.email}"
 
     def _block(self, email: str, state: str) -> str:
-        """Блокирует или разблокирует учётную запись организатора."""
+        """Изменяет статус организатора и закрывает его встречи при блокировке."""
         blocked = _switch(state)
         account = self._accounts.set_blocked(self._current_account(), email, blocked)
+        if blocked:
+            self._conferences.close_for(account)
         return f"{account.email} · {'заблокирован' if blocked else 'разблокирован'}"
+
+    def _create(self, title: str, date: str, minutes: str, description: str = "") -> str:
+        """Добавляет встречу в кабинет и показывает её приглашение."""
+        room = self._conferences.create(
+            self._current_account(), _schedule(title, date, minutes, description)
+        )
+        return _room_label(room)
+
+    def _edit(
+        self, room_id: str, title: str, date: str, minutes: str, description: str = ""
+    ) -> str:
+        """Обновляет расписание своей встречи."""
+        room = self._owner_room(room_id)
+        room.reschedule(_schedule(title, date, minutes, description), self._conferences.clock())
+        return _room_label(room)
+
+    def _list(self) -> str:
+        """Показывает карточки вошедшего организатора."""
+        rooms = self._conferences.list_owned(self._current_account())
+        return "\n".join(_room_label(room) for room in rooms) or "У вас пока нет встреч."
+
+    def _meeting(self, action: str, room_id: str) -> str:
+        """Выполняет действие владельца над жизненным циклом встречи."""
+        room = self._owner_room(room_id)
+        now = self._conferences.clock()
+        if action == "start":
+            room.start(now)
+        elif action == "cancel":
+            room.cancel()
+        elif action == "finish":
+            room.finish(now)
+        elif action == "renew":
+            room.rotate_invite()
+        else:
+            raise ValueError("Действия со встречей · start, cancel, finish, renew.")
+        return _room_label(room)
 
     def _current_account(self) -> Account:
         """Возвращает текущую активную учётную запись."""
@@ -110,9 +159,40 @@ class Console:
             raise ValueError("Сначала войдите с помощью login.")
         return self._account
 
+    def _owner_room(self, room_id: str) -> Room:
+        """Проверяет, что встреча принадлежит вошедшему организатору."""
+        return self._conferences.owned(self._current_account(), _number(room_id))
+
+
+def _schedule(title: str, date: str, minutes: str, description: str) -> Schedule:
+    """Разбирает дату ISO 8601 и длительность из команды."""
+    try:
+        starts_at = datetime.fromisoformat(date)
+    except ValueError as error:
+        raise ValueError("Формат даты · ГГГГ-ММ-ДДTчч:мм+03:00.") from error
+    return Schedule(title, starts_at, _number(minutes), description)
+
+
+def _number(value: str) -> int:
+    """Преобразует аргумент команды в целое число."""
+    try:
+        return int(value)
+    except ValueError as error:
+        raise ValueError("Укажите целое число.") from error
+
 
 def _switch(value: str) -> bool:
     """Разбирает переключатель on или off."""
     if value not in {"on", "off"}:
         raise ValueError("Значение должно быть on или off.")
     return value == "on"
+
+
+def _room_label(room: Room) -> str:
+    """Формирует строку карточки конференции."""
+    return (
+        f"#{room.id} · {room.schedule.title} · {room.status} · "
+        f"{room.schedule.starts_at.isoformat(timespec='minutes')} · {room.schedule.minutes} мин · "
+        f"приглашение {room.invite}"
+        + (f"\nОписание · {room.schedule.description}" if room.schedule.description else "")
+    )
