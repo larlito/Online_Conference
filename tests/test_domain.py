@@ -6,6 +6,7 @@ import pytest
 
 from accounts import Account
 from accounts import Accounts
+from conferences.models import GuestStatus
 from conferences.models import MeetingStatus
 from conferences.room import Room
 from conferences.service import Conferences
@@ -13,6 +14,20 @@ from tests.conftest import ADMIN
 from tests.conftest import HOST
 from tests.conftest import PASSWORD
 from tests.conftest import Clock
+
+
+def test_invite_rotation_keeps_existing_request(
+    prepared: tuple[Clock, Accounts, Account, Conferences, Room],
+) -> None:
+    """Прежнее приглашение не принимает новые заявки, сохраняя старые."""
+    _, _, _, conferences, room = prepared
+    old_invite = room.invite
+    _, guest = conferences.request(old_invite, "Anna")
+    room.rotate_invite()
+    with pytest.raises(ValueError, match="Приглашение не найдено"):
+        conferences.request(old_invite, "Boris")
+    assert conferences.resume(guest.access_key) == (room, guest)
+    assert guest.status == GuestStatus.WAITING
 
 
 def test_owner_access_and_block(
@@ -32,6 +47,24 @@ def test_owner_access_and_block(
         conferences.owned(host, room.id)
     with pytest.raises(ValueError, match="Не удалось войти"):
         accounts.authenticate(HOST, PASSWORD)
+
+
+def test_room_limit_and_expiring_reservation(
+    prepared: tuple[Clock, Accounts, Account, Conferences, Room],
+) -> None:
+    """Зарезервированное место организатора не выдаётся двадцатому гостю."""
+    clock, _, host, conferences, room = prepared
+    room.start(clock())
+    guests = [conferences.request(room.invite, f"Гость {number}")[1] for number in range(20)]
+    for guest in guests[:19]:
+        room.decide(guest.id, True, clock())
+    with pytest.raises(ValueError, match="Свободных мест нет"):
+        room.decide(guests[-1].id, True, clock())
+    assert guests[-1].status == GuestStatus.WAITING
+    clock.now += timedelta(seconds=60)
+    conferences.owned(host, room.id)
+    assert guests[0].status == GuestStatus.WAITING
+    room.decide(guests[-1].id, True, clock())
 
 
 def test_meeting_expires_at_scheduled_end(

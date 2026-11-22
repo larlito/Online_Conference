@@ -5,6 +5,7 @@ from datetime import datetime
 
 from accounts import Account
 from accounts import Role
+from conferences.models import Guest
 from conferences.models import MeetingStatus
 from conferences.models import Schedule
 from conferences.room import Room
@@ -17,6 +18,7 @@ class Conferences:
         """Принимает источник времени для операций со встречами."""
         self.clock = clock
         self._rooms: dict[int, Room] = {}
+        self._guest_sessions: dict[str, tuple[Room, Guest]] = {}
 
     def create(self, host: Account, schedule: Schedule) -> Room:
         """Добавляет встречу активного организатора."""
@@ -56,6 +58,25 @@ class Conferences:
             reverse=True,
         )
         return (*upcoming, *closed)
+
+    def request(self, invite: str, name: str) -> tuple[Room, Guest]:
+        """Принимает заявку по текущей версии приглашения."""
+        now = self.clock()
+        for room in self._rooms.values():
+            if room.invite == invite:
+                room.refresh(now)
+                guest = room.request(name, now)
+                self._guest_sessions[guest.access_key] = room, guest
+                return room, guest
+        raise ValueError("Приглашение не найдено или заменено.")
+
+    def resume(self, key: str) -> tuple[Room, Guest]:
+        """Восстанавливает контекст гостя по выданному ключу."""
+        if key not in self._guest_sessions:
+            raise ValueError("Гостевая сессия не найдена.")
+        room, guest = self._guest_sessions[key]
+        room.refresh(self.clock())
+        return room, guest
 
     def close_for(self, host: Account) -> None:
         """Закрывает открытые встречи заблокированного организатора."""

@@ -1,11 +1,15 @@
-"""Состояния встречи, её расписание и посещаемость."""
+"""Состояния встречи, гостевого допуска и посещаемости."""
 
 from dataclasses import dataclass
+from dataclasses import field
 from datetime import datetime
 from datetime import timedelta
 from enum import StrEnum
+from secrets import token_urlsafe
 
+CAPACITY = 20
 ENTRY_WINDOW = timedelta(minutes=15)
+RECONNECT_WINDOW = timedelta(seconds=60)
 
 
 class MeetingStatus(StrEnum):
@@ -15,6 +19,18 @@ class MeetingStatus(StrEnum):
     LIVE = "Идёт"
     FINISHED = "Завершена"
     CANCELLED = "Отменена"
+
+
+class GuestStatus(StrEnum):
+    """Статусы гостевой заявки и подключения."""
+
+    WAITING = "Ожидает"
+    APPROVED = "Допущен"
+    CONNECTED = "В комнате"
+    OFFLINE = "Связь прервана"
+    REJECTED = "Отклонён"
+    REMOVED = "Удалён"
+    CLOSED = "Доступ закрыт"
 
 
 def checked_text(value: str, title: str, minimum: int, maximum: int) -> str:
@@ -55,3 +71,26 @@ class Presence:
 
     joined_at: datetime
     left_at: datetime | None = None
+
+
+@dataclass
+class Guest:
+    """Заявка, приватный ключ восстановления и состояние устройств гостя."""
+
+    id: int
+    name: str
+    access_key: str = field(default_factory=lambda: token_urlsafe(18), repr=False)
+    status: GuestStatus = GuestStatus.WAITING
+    hold_until: datetime | None = None
+    speaker: bool = False
+    microphone: bool = False
+    camera: bool = False
+    intervals: list[Presence] = field(default_factory=list)
+
+    def close_connection(self, now: datetime) -> None:
+        """Закрывает открытый интервал и отключает устройства."""
+        if self.intervals and self.intervals[-1].left_at is None:
+            self.intervals[-1].left_at = now
+        self.speaker = False
+        self.microphone = False
+        self.camera = False
