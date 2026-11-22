@@ -2,6 +2,7 @@
 
 from datetime import UTC
 from datetime import datetime
+from pathlib import Path
 
 from accounts import Accounts
 from cli import Console
@@ -11,4 +12,5 @@ if __name__ == "__main__":
     Console(
         Accounts("admin@example.test", "Admin-demo-2026"),
         Conferences(lambda: datetime.now(UTC)),
+        Path("output"),
     ).run()

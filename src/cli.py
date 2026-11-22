@@ -4,12 +4,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from getpass import getpass
+from pathlib import Path
 from shlex import split
 
 from accounts import Account
 from accounts import Accounts
 from conferences.models import Guest
+from conferences.models import GuestStatus
 from conferences.models import Schedule
+from conferences.reports import write_attendance
 from conferences.room import Room
 from conferences.service import Conferences
 
@@ -26,10 +29,11 @@ class Command:
 class Console:
     """Разбирает ввод, управляет текущим пользователем и выводит результаты."""
 
-    def __init__(self, accounts: Accounts, conferences: Conferences) -> None:
-        """Подключает операции для текущего этапа."""
+    def __init__(self, accounts: Accounts, conferences: Conferences, output: Path) -> None:
+        """Подключает операции с учётными записями, встречами и отчётами."""
         self._accounts = accounts
         self._conferences = conferences
+        self._output = output
         self._account: Account | None = None
         self._guest_session: tuple[Room, Guest] | None = None
         self._commands = (
@@ -48,9 +52,17 @@ class Console:
             Command("guest INVITE NAME", "подать гостевую заявку", self._guest),
             Command("resume KEY", "вернуться к гостевой заявке и увидеть её статус", self._resume),
             Command("queue ID", "показать заявки и их статусы", self._queue),
-            Command("moderate ACTION ID GUEST", "обработать гостевую заявку", self._moderate),
+            Command(
+                "moderate ACTION ID GUEST", "обработать заявку или права гостя", self._moderate
+            ),
             Command("join", "подключиться по допуску", self._join),
             Command("leave", "отключиться с возможностью вернуться", self._leave),
+            Command("roster ID", "показать подключённых участников и устройства", self._roster),
+            Command("device ID TYPE STATE", "изменить состояние устройства", self._device),
+            Command("send ID TEXT", "написать в общий чат", self._send),
+            Command("chat ID", "прочитать видимые сообщения", self._chat),
+            Command("hide ID MESSAGE", "скрыть сообщение", self._hide),
+            Command("report ID", "выгрузить CSV после встречи", self._report),
         )
         self._by_name = {command.syntax.split()[0]: command for command in self._commands}
 
@@ -187,7 +199,7 @@ class Console:
         )
 
     def _moderate(self, action: str, room_id: str, guest_id: str) -> str:
-        """Обрабатывает гостевую заявку."""
+        """Обрабатывает гостевую заявку или право на публикацию."""
         room = self._owner_room(room_id)
         number = _number(guest_id)
         now = self._conferences.clock()
@@ -195,8 +207,10 @@ class Console:
             room.decide(number, action == "admit", now)
         elif action == "kick":
             room.remove(number, now)
+        elif action in {"speaker-on", "speaker-off"}:
+            room.set_speaker(number, action == "speaker-on")
         else:
-            raise ValueError("Действия с гостем · admit, reject, kick.")
+            raise ValueError("Действия с гостем · admit, reject, kick, speaker-on, speaker-off.")
         return "Решение принято."
 
     def _join(self) -> str:
@@ -210,6 +224,63 @@ class Console:
         room, guest = self._current_guest()
         room.leave(guest, self._conferences.clock())
         return "Вы отключены. Для возвращения в течение 60 секунд введите join."
+
+    def _roster(self, room_id: str) -> str:
+        """Показывает активную комнату и состояния устройств участников."""
+        room, guest = self._room_context(room_id)
+        room.ensure_access(guest)
+        lines = [
+            _person_label(
+                0, room.owner, True, room.host_microphone, room.host_camera, room.screen_owner
+            )
+        ]
+        for member in room.guests():
+            if member.status == GuestStatus.CONNECTED:
+                lines.append(
+                    _person_label(
+                        member.id,
+                        member.name,
+                        member.speaker,
+                        member.microphone,
+                        member.camera,
+                        room.screen_owner,
+                    )
+                )
+        return "\n".join(lines)
+
+    def _device(self, room_id: str, device: str, state: str) -> str:
+        """Меняет учебный флаг устройства."""
+        room, guest = self._room_context(room_id)
+        room.set_device(guest, device, _switch(state))
+        return "Состояние устройства изменено."
+
+    def _send(self, room_id: str, text: str) -> str:
+        """Публикует текст в общем чате."""
+        room, guest = self._room_context(room_id)
+        room.post(guest, text, self._conferences.clock())
+        return "Сообщение отправлено."
+
+    def _chat(self, room_id: str) -> str:
+        """Выводит доступную историю чата."""
+        room, guest = self._room_context(room_id)
+        return (
+            "\n".join(
+                f"#{item.id} {item.sent_at.astimezone(room.schedule.starts_at.tzinfo):%H:%M:%S} "
+                f"{item.author} · {item.text}"
+                for item in room.messages(guest)
+            )
+            or "Чат пока пуст."
+        )
+
+    def _hide(self, room_id: str, message_id: str) -> str:
+        """Скрывает выбранное сообщение от участников."""
+        self._owner_room(room_id).hide(_number(message_id))
+        return "Сообщение скрыто."
+
+    def _report(self, room_id: str) -> str:
+        """Сохраняет отчёт по своей завершённой встрече."""
+        path = write_attendance(self._owner_room(room_id), self._output)
+        return f"Отчёт сохранён · {path}"
 
     def _current_account(self) -> Account:
         """Возвращает текущую активную учётную запись."""
@@ -226,6 +297,12 @@ class Console:
         if self._guest_session is None:
             raise ValueError("Сначала подайте заявку командой guest или используйте resume.")
         return self._conferences.resume(self._guest_session[1].access_key)
+
+    def _room_context(self, room_id: str) -> tuple[Room, Guest | None]:
+        """Разрешает владельцу указать номер, а гостю — текущую комнату через прочерк."""
+        if room_id == "-":
+            return self._current_guest()
+        return self._owner_room(room_id), None
 
 
 def _schedule(title: str, date: str, minutes: str, description: str) -> Schedule:
@@ -259,4 +336,14 @@ def _room_label(room: Room) -> str:
         f"{room.schedule.starts_at.isoformat(timespec='minutes')} · {room.schedule.minutes} мин · "
         f"приглашение {room.invite}"
         + (f"\nОписание · {room.schedule.description}" if room.schedule.description else "")
+    )
+
+
+def _person_label(
+    number: int, name: str, speaker: bool, mic: bool, camera: bool, screen_owner: int | None
+) -> str:
+    """Формирует строку участника с правами и состояниями устройств."""
+    return (
+        f"#{number} · {name} · выступает: {'да' if speaker else 'нет'} · "
+        f"микрофон: {mic} · камера: {camera} · экран: {screen_owner == number}"
     )
