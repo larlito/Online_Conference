@@ -8,6 +8,7 @@ from shlex import split
 
 from accounts import Account
 from accounts import Accounts
+from conferences.models import Guest
 from conferences.models import Schedule
 from conferences.room import Room
 from conferences.service import Conferences
@@ -30,6 +31,7 @@ class Console:
         self._accounts = accounts
         self._conferences = conferences
         self._account: Account | None = None
+        self._guest_session: tuple[Room, Guest] | None = None
         self._commands = (
             Command("login EMAIL", "войти, пароль вводится отдельно", self._login),
             Command("logout", "сбросить текущий вход", self._logout),
@@ -43,6 +45,12 @@ class Console:
             Command(
                 "meeting ACTION ID", "старт, отмена, завершение или замена кода", self._meeting
             ),
+            Command("guest INVITE NAME", "подать гостевую заявку", self._guest),
+            Command("resume KEY", "вернуться к гостевой заявке и увидеть её статус", self._resume),
+            Command("queue ID", "показать заявки и их статусы", self._queue),
+            Command("moderate ACTION ID GUEST", "обработать гостевую заявку", self._moderate),
+            Command("join", "подключиться по допуску", self._join),
+            Command("leave", "отключиться с возможностью вернуться", self._leave),
         )
         self._by_name = {command.syntax.split()[0]: command for command in self._commands}
 
@@ -89,6 +97,8 @@ class Console:
 
     def _identity(self) -> str:
         """Возвращает подпись текущего пользователя для приглашения ввода."""
+        if self._guest_session is not None:
+            return self._guest_session[1].name
         if self._account is not None:
             return self._account.email
         return "ПК-01"
@@ -96,11 +106,13 @@ class Console:
     def _login(self, email: str) -> str:
         """Открывает сессию администратора или организатора."""
         self._account = self._accounts.authenticate(email, getpass("Пароль: "))
+        self._guest_session = None
         return f"Вход · {self._account.role}"
 
     def _logout(self) -> str:
         """Возвращает терминал в режим выбора пользователя."""
         self._account = None
+        self._guest_session = None
         return "Текущий вход сброшен."
 
     def _add_host(self, email: str) -> str:
@@ -153,6 +165,52 @@ class Console:
             raise ValueError("Действия со встречей · start, cancel, finish, renew.")
         return _room_label(room)
 
+    def _guest(self, invite: str, name: str) -> str:
+        """Подаёт заявку и переключает терминал на нового гостя."""
+        room, guest = self._conferences.request(invite, name)
+        self._account = None
+        self._guest_session = room, guest
+        return f"Заявка #{guest.id} · {guest.status}\nГостевой ключ: {guest.access_key}"
+
+    def _resume(self, key: str) -> str:
+        """Переключает терминал на существующего гостя."""
+        room, guest = self._conferences.resume(key)
+        self._account = None
+        self._guest_session = room, guest
+        return f"Заявка #{guest.id} · {guest.status}"
+
+    def _queue(self, room_id: str) -> str:
+        """Показывает владельцу заявки и их текущее состояние."""
+        guests = self._owner_room(room_id).guests()
+        return "\n".join(f"#{guest.id} · {guest.name} · {guest.status}" for guest in guests) or (
+            "Заявок пока нет."
+        )
+
+    def _moderate(self, action: str, room_id: str, guest_id: str) -> str:
+        """Обрабатывает гостевую заявку."""
+        room = self._owner_room(room_id)
+        number = _number(guest_id)
+        now = self._conferences.clock()
+        if action in {"admit", "reject"}:
+            room.decide(number, action == "admit", now)
+        elif action == "kick":
+            room.remove(number, now)
+        else:
+            raise ValueError("Действия с гостем · admit, reject, kick.")
+        return "Решение принято."
+
+    def _join(self) -> str:
+        """Отмечает начало гостевого подключения."""
+        room, guest = self._current_guest()
+        room.join(guest, self._conferences.clock())
+        return f"Вы подключены · {room.schedule.title}"
+
+    def _leave(self) -> str:
+        """Отмечает отключение гостя от комнаты."""
+        room, guest = self._current_guest()
+        room.leave(guest, self._conferences.clock())
+        return "Вы отключены. Для возвращения в течение 60 секунд введите join."
+
     def _current_account(self) -> Account:
         """Возвращает текущую активную учётную запись."""
         if self._account is None or self._account.blocked:
@@ -162,6 +220,12 @@ class Console:
     def _owner_room(self, room_id: str) -> Room:
         """Проверяет, что встреча принадлежит вошедшему организатору."""
         return self._conferences.owned(self._current_account(), _number(room_id))
+
+    def _current_guest(self) -> tuple[Room, Guest]:
+        """Возвращает гостевую сессию с учётом прошедшего времени."""
+        if self._guest_session is None:
+            raise ValueError("Сначала подайте заявку командой guest или используйте resume.")
+        return self._conferences.resume(self._guest_session[1].access_key)
 
 
 def _schedule(title: str, date: str, minutes: str, description: str) -> Schedule:
