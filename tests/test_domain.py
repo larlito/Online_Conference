@@ -67,6 +67,30 @@ def test_room_limit_and_expiring_reservation(
     room.decide(guests[-1].id, True, clock())
 
 
+def test_speaker_and_screen_limits(
+    prepared: tuple[Clock, Accounts, Account, Conferences, Room],
+) -> None:
+    """Организатор учитывается в лимите, а отзыв права освобождает экран."""
+    clock, _, _, conferences, room = prepared
+    room.start(clock())
+    guests = [conferences.request(room.invite, f"Гость {number}")[1] for number in range(4)]
+    for guest in guests:
+        room.decide(guest.id, True, clock())
+        room.join(guest, clock())
+    for guest in guests[:3]:
+        room.set_speaker(guest.id, True)
+    with pytest.raises(ValueError, match="лимит выступающих"):
+        room.set_speaker(guests[3].id, True)
+    room.set_device(guests[0], "screen", True)
+    room.set_device(guests[0], "mic", True)
+    with pytest.raises(ValueError, match="Экран уже"):
+        room.set_device(guests[1], "screen", True)
+    room.set_speaker(guests[0].id, False)
+    assert not guests[0].microphone and room.screen_owner is None
+    room.set_device(guests[1], "screen", True)
+    assert room.screen_owner == guests[1].id
+
+
 def test_meeting_expires_at_scheduled_end(
     prepared: tuple[Clock, Accounts, Account, Conferences, Room],
 ) -> None:

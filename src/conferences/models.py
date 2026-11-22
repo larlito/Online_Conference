@@ -8,6 +8,7 @@ from enum import StrEnum
 from secrets import token_urlsafe
 
 CAPACITY = 20
+SPEAKER_LIMIT = 4
 ENTRY_WINDOW = timedelta(minutes=15)
 RECONNECT_WINDOW = timedelta(seconds=60)
 
@@ -94,3 +95,14 @@ class Guest:
         self.speaker = False
         self.microphone = False
         self.camera = False
+
+
+@dataclass
+class Message:
+    """Сообщение общего чата."""
+
+    id: int
+    author: str
+    text: str
+    sent_at: datetime
+    visible: bool = True

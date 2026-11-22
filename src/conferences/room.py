@@ -6,9 +6,11 @@ from secrets import token_urlsafe
 from conferences.models import CAPACITY
 from conferences.models import ENTRY_WINDOW
 from conferences.models import RECONNECT_WINDOW
+from conferences.models import SPEAKER_LIMIT
 from conferences.models import Guest
 from conferences.models import GuestStatus
 from conferences.models import MeetingStatus
+from conferences.models import Message
 from conferences.models import Presence
 from conferences.models import Schedule
 from conferences.models import checked_text
@@ -28,6 +30,7 @@ class Room:
         self.host_camera = False
         self.host_presence: Presence | None = None
         self._guests: dict[int, Guest] = {}
+        self._messages: list[Message] = []
         self.reschedule(schedule, now)
 
     def reschedule(self, schedule: Schedule, now: datetime) -> None:
@@ -145,6 +148,67 @@ class Room:
         self._disconnect(guest, now)
         guest.status = GuestStatus.REMOVED
         guest.hold_until = None
+
+    def set_speaker(self, guest_id: int, enabled: bool) -> None:
+        """Назначает выступающего или снимает право и выключает его устройства."""
+        guest = self._get_guest(guest_id)
+        self.ensure_access(guest)
+        if enabled and not guest.speaker:
+            if sum(item.speaker for item in self._guests.values()) >= SPEAKER_LIMIT - 1:
+                raise ValueError("Достигнут лимит выступающих с учётом организатора.")
+            guest.speaker = True
+        if not enabled:
+            guest.speaker = guest.microphone = guest.camera = False
+            if self.screen_owner == guest.id:
+                self.screen_owner = None
+
+    def set_device(self, guest: Guest | None, device: str, enabled: bool) -> None:
+        """Меняет состояние микрофона, камеры или общего слота демонстрации."""
+        self._require_live()
+        if guest is not None:
+            self.ensure_access(guest)
+            if not guest.speaker:
+                raise ValueError("У гостя нет права выступления.")
+        if device == "screen":
+            person = guest.id if guest is not None else 0
+            if enabled:
+                if self.screen_owner not in {None, person}:
+                    raise ValueError("Экран уже демонстрирует другой участник.")
+                self.screen_owner = person
+            elif self.screen_owner == person:
+                self.screen_owner = None
+        elif device == "mic":
+            if guest is None:
+                self.host_microphone = enabled
+            else:
+                guest.microphone = enabled
+        elif device == "camera":
+            if guest is None:
+                self.host_camera = enabled
+            else:
+                guest.camera = enabled
+        else:
+            raise ValueError("Устройства · mic, camera, screen.")
+
+    def post(self, guest: Guest | None, text: str, now: datetime) -> None:
+        """Добавляет сообщение от организатора или подключённого гостя."""
+        self.ensure_access(guest)
+        author = self.owner if guest is None else guest.name
+        self._messages.append(
+            Message(len(self._messages) + 1, author, checked_text(text, "Сообщение", 1, 1000), now)
+        )
+
+    def messages(self, guest: Guest | None) -> tuple[Message, ...]:
+        """Возвращает видимые сообщения активной встречи."""
+        self.ensure_access(guest)
+        return tuple(message for message in self._messages if message.visible)
+
+    def hide(self, message_id: int) -> None:
+        """Скрывает сообщение из общего просмотра."""
+        self._require_live()
+        if not 1 <= message_id <= len(self._messages):
+            raise ValueError("Сообщение не найдено.")
+        self._messages[message_id - 1].visible = False
 
     def _get_guest(self, guest_id: int) -> Guest:
         """Возвращает гостя по номеру заявки."""
