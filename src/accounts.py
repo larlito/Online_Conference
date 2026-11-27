@@ -41,7 +41,7 @@ class Accounts:
             account is None
             or account.blocked
             or not 12 <= len(password) <= 128
-            or not compare_digest(account.digest, self._digest(password, account.salt))
+            or not matches_password(account, password)
         ):
             raise ValueError("Не удалось войти. Проверьте адрес и пароль.")
         return account
@@ -62,21 +62,10 @@ class Accounts:
 
     def _create(self, email: str, password: str, role: Role) -> Account:
         """Проверяет реквизиты и сохраняет хеш пароля с солью."""
-        address = email.strip().lower()
-        user, separator, domain = address.partition("@")
-        if (
-            not (user and separator and domain)
-            or "@" in domain
-            or any(char.isspace() for char in address)
-        ):
-            raise ValueError("Введите адрес электронной почты.")
-        if address in self._entries:
+        account = build_account(email, password, role)
+        if account.email in self._entries:
             raise ValueError("Этот адрес уже используется.")
-        if not 12 <= len(password) <= 128:
-            raise ValueError("Пароль должен содержать от 12 до 128 символов.")
-        salt = token_bytes(16)
-        account = Account(address, role, salt, self._digest(password, salt))
-        self._entries[address] = account
+        self._entries[account.email] = account
         return account
 
     def _require_admin(self, account: Account) -> None:
@@ -88,7 +77,29 @@ class Accounts:
         ):
             raise ValueError("Действие доступно администратору.")
 
-    @staticmethod
-    def _digest(password: str, salt: bytes) -> bytes:
-        """Вычисляет хеш пароля средствами стандартной библиотеки."""
-        return scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
+
+def build_account(email: str, password: str, role: Role) -> Account:
+    """Проверяет реквизиты и формирует профиль с индивидуальной солью."""
+    address = email.strip().lower()
+    user, separator, domain = address.partition("@")
+    if (
+        not (user and separator and domain)
+        or "@" in domain
+        or len(address) > 254
+        or any(char.isspace() for char in address)
+    ):
+        raise ValueError("Введите адрес электронной почты.")
+    if not 12 <= len(password) <= 128:
+        raise ValueError("Пароль должен содержать от 12 до 128 символов.")
+    salt = token_bytes(16)
+    return Account(address, role, salt, _digest(password, salt))
+
+
+def matches_password(account: Account, password: str) -> bool:
+    """Сравнивает вычисленный хеш с хешем профиля."""
+    return compare_digest(account.digest, _digest(password, account.salt))
+
+
+def _digest(password: str, salt: bytes) -> bytes:
+    """Вычисляет хеш пароля средствами стандартной библиотеки."""
+    return scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)

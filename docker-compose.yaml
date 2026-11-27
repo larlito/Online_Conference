@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: conference
+      POSTGRES_USER: conference
+      POSTGRES_PASSWORD: conference-local
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "conference", "-d", "conference"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - conference_data:/var/lib/postgresql/data
+
+volumes:
+  conference_data:
