@@ -9,6 +9,7 @@ from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
@@ -30,6 +31,8 @@ from storage.database import database_url
 from storage.database import make_engine
 from usecases.errors import Problem
 from usecases.service import ConferenceService
+from web.pages import DIRECTORY
+from web.pages import pages
 
 
 def system_clock() -> datetime:
@@ -89,4 +92,6 @@ def create_app(
     app.add_exception_handler(HTTPException, http_handler)
     for router in (sessions, accounts, meetings, guests, room):
         app.include_router(router)
+    app.include_router(pages)
+    app.mount("/static", StaticFiles(directory=DIRECTORY / "static"), name="static")
     return app

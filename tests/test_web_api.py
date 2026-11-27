@@ -237,3 +237,14 @@ def test_openapi_documents_routes(client: tuple[TestClient, Clock]) -> None:
                 schema = result["content"]["application/json"]["schema"]
                 if int(code) >= 400:
                     assert schema["$ref"].endswith("/ErrorDTO")
+
+
+def test_jinja_page_and_assets(client: tuple[TestClient, Clock]) -> None:
+    """Стартовая страница ссылается на доступный CSS и JavaScript."""
+    http, _clock = client
+    page = http.get("/")
+    assert page.status_code == 200
+    assert "Подключение к конференции" in page.text
+    assert "/static/app.css" in page.text and "/static/app.js" in page.text
+    assert http.get("/static/app.css").status_code == 200
+    assert http.get("/static/app.js").status_code == 200
