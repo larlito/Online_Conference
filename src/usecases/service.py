@@ -120,14 +120,20 @@ class ConferenceService:
     def create(self, token: str, schedule: Schedule) -> Room:
         """Создаёт встречу организатора с новым приглашением."""
         owner = self._account(token, "manage_meetings")
-        room = Room(0, owner.email, schedule, self.clock())
+        now = self.clock()
+        if schedule.starts_at <= now:
+            raise Problem(400, "Начало встречи должно быть в будущем.")
+        room = Room(0, owner.email, schedule, now)
         self.rooms.add(room)
         return room
 
     def edit(self, token: str, meeting_id: int, schedule: Schedule) -> Room:
         """Изменяет расписание запланированной встречи."""
         current = self._owner_room(token, meeting_id)
-        current.room.reschedule(schedule, self.clock())
+        now = self.clock()
+        if schedule.starts_at <= now:
+            raise Problem(400, "Начало встречи должно быть в будущем.")
+        current.room.reschedule(schedule, now)
         return self._save(current)
 
     def change(self, token: str, meeting_id: int, action: str) -> Room:
@@ -216,7 +222,12 @@ class ConferenceService:
     def hide(self, token: str, meeting_id: int, message_id: int) -> None:
         """Скрывает сообщение от имени владельца комнаты."""
         current = self._owner_room(token, meeting_id)
-        current.room.hide(message_id)
+        try:
+            current.room.hide(message_id)
+        except ValueError as error:
+            if current.room.status == MeetingStatus.LIVE:
+                raise Problem(404, "Сообщение не найдено.") from error
+            raise
         self._save(current)
 
     def report(self, token: str, meeting_id: int) -> str:
