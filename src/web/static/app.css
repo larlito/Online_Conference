@@ -1,0 +1,42 @@
+:root{font-family:system-ui,sans-serif;color:#15243b;background:#f2f5fa;line-height:1.5;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0}
+.top{display:flex;justify-content:space-between;gap:1rem;align-items:center;background:#13233c;color:#fff;padding:1rem max(1.25rem,calc((100% - 1100px)/2))}
+.top a{color:inherit}
+.brand{font-size:1.15rem;font-weight:750;text-decoration:none;white-space:nowrap}
+.top nav,.actions,.controls,.heading-row{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap}
+main{max-width:1140px;margin:auto;padding:1.5rem 1.25rem 3rem}
+h1{margin:.35rem 0 .75rem;font-size:clamp(1.6rem,4vw,2.35rem);letter-spacing:-.025em}
+h2,h3{line-height:1.25}
+h2{font-size:1.2rem;margin:.1rem 0 .9rem}
+h3{margin:1.1rem 0 .55rem}
+article{background:#fff;border:1px solid #d8e0ee;border-radius:12px;padding:1.2rem;box-shadow:0 4px 16px #15243b08}
+main>article{margin:1rem 0}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+form,label{display:grid;gap:.45rem}
+form{gap:.85rem}
+label{font-size:.9rem;font-weight:640}
+input,textarea,select,button{font:inherit}
+input,textarea,select{width:100%;border:1px solid #b7c3d6;border-radius:7px;padding:.53rem .65rem;color:inherit;background:#fff}
+button{border:1px solid transparent;border-radius:7px;background:#2450a3;color:#fff;font-weight:650;padding:.53rem .75rem;cursor:pointer;justify-self:start}
+button.secondary{border-color:#b8c6de;background:#eff4ff;color:#193b78}
+button:disabled{opacity:.6;cursor:wait}
+a{color:#214892}
+:focus-visible{outline:3px solid #5583dc;outline-offset:2px}
+.muted{color:#4c5d76}
+.notice{padding:.7rem .85rem;border:1px solid #b8c6de;border-radius:7px;background:#e9f0ff}
+.notice.error{border-color:#e8bcba;color:#8c1818;background:#fff1f1}
+.items{list-style:none;padding:0;margin:.7rem 0}
+.items li{padding:.55rem 0;border-bottom:1px solid #e3e9f2;overflow-wrap:anywhere}
+.items .actions{margin-top:.5rem}
+.items li:last-child{border-bottom:0}
+.invite{display:flex;flex-wrap:wrap;gap:.65rem;margin-bottom:.85rem;overflow-wrap:anywhere}
+.invite code{background:#eef2f8;padding:.05rem .3rem}
+.heading-row{justify-content:space-between}
+.heading-row h2,.heading-row h3{margin:0}
+#queue-section,.controls{margin-top:1rem}
+.controls{align-items:end}
+#send label{flex:1;min-width:13rem}
+.chat{max-height:19rem;overflow:auto}
+[hidden]{display:none!important}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.top{align-items:flex-start}.top nav{justify-content:flex-end;font-size:.85rem}}

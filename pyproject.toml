@@ -1,7 +1,7 @@
 [project]
 name = "conference-platform"
 version = "0.1.0"
-description = "Учебный консольный прототип платформы онлайн-конференций"
+description = "Учебная платформа онлайн-конференций"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13",

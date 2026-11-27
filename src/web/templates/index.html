@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Online Conference</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  <script src="{{ url_for('static', path='app.js') }}" defer></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">Online Conference</a>
+    <nav><a href="/docs">Документация API</a><button id="logout" class="secondary" hidden>Выйти</button></nav>
+  </header>
+  <main>
+    <h1 id="page-title">Подключение к конференции</h1>
+    <p id="identity" class="muted" hidden></p>
+    <p id="status" class="notice" role="status" aria-live="polite" hidden></p>
+    <section id="entry" class="grid">
+      <article>
+        <h2>Вход в аккаунт</h2>
+        <form id="login">
+          <label>Электронная почта<input name="email" type="email" maxlength="254" autocomplete="username" required></label>
+          <label>Пароль<input name="password" type="password" minlength="12" maxlength="128" autocomplete="current-password" required></label>
+          <button>Войти</button>
+        </form>
+      </article>
+      <article>
+        <h2>Вход по приглашению</h2>
+        <form id="apply">
+          <label>Код приглашения<input name="invite" maxlength="48" required></label>
+          <label>Имя участника<input name="name" minlength="2" maxlength="60" required></label>
+          <button>Подать заявку</button>
+        </form>
+      </article>
+    </section>
+
+    <section id="admin" class="grid" hidden>
+      <article>
+        <h2>Добавить организатора</h2>
+        <form id="add-host">
+          <label>Электронная почта<input name="email" type="email" maxlength="254" required></label>
+          <label>Пароль организатора<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+          <button>Создать запись</button>
+        </form>
+      </article>
+      <article>
+        <h2>Доступ организатора</h2>
+        <form id="block">
+          <label>Электронная почта<input name="email" type="email" maxlength="254" required></label>
+          <label>Действие<select name="blocked"><option value="true">Заблокировать</option><option value="false">Разблокировать</option></select></label>
+          <button>Сохранить</button>
+        </form>
+      </article>
+    </section>
+
+    <section id="host" class="grid" hidden>
+      <article>
+        <h2>Мои встречи</h2>
+        <ul id="meetings" class="items"></ul>
+        <button id="refresh-meetings" class="secondary">Обновить список</button>
+      </article>
+      <article>
+        <h2 id="editor-title">Запланировать встречу</h2>
+        <form id="meeting-form">
+          <label>Тема<input name="title" minlength="3" maxlength="120" required></label>
+          <div class="grid">
+            <label>Начало<input name="starts_at" type="datetime-local" required></label>
+            <label>Длительность в минутах<input name="minutes" type="number" min="15" max="180" value="45" required></label>
+          </div>
+          <label>Описание<textarea name="description" maxlength="1000" rows="2"></textarea></label>
+          <div class="actions"><button>Сохранить встречу</button><button id="cancel-edit" class="secondary" type="button" hidden>Отменить правку</button></div>
+        </form>
+      </article>
+    </section>
+
+    <article id="details" hidden>
+      <h2 id="meeting-title">Карточка встречи</h2>
+      <p id="meeting-state"></p>
+      <p id="meeting-description" class="muted"></p>
+      <div id="invite-line" class="invite">
+        <a id="invite-link" target="_blank" rel="noopener">Ссылка для гостя</a>
+        <code id="meeting-code"></code>
+      </div>
+      <div id="meeting-actions" class="actions"></div>
+      <section id="queue-section" hidden>
+        <div class="heading-row"><h3>Заявки гостей</h3><button id="refresh-queue" class="secondary">Обновить очередь</button></div>
+        <ul id="queue" class="items"></ul>
+      </section>
+    </article>
+
+    <article id="guest" hidden>
+      <h2>Гостевая заявка</h2>
+      <p id="guest-state"></p>
+      <div id="guest-actions" class="actions"></div>
+    </article>
+
+    <article id="room" hidden>
+      <div class="heading-row"><h2>Комната</h2><button id="refresh-room" class="secondary">Обновить комнату</button></div>
+      <p id="screen" class="muted"></p>
+      <ul id="roster" class="items"></ul>
+      <form id="device" class="actions controls">
+        <label>Устройство<select name="device"><option value="mic">Микрофон</option><option value="camera">Камера</option><option value="screen">Экран</option></select></label>
+        <label>Состояние<select name="enabled"><option value="true">Включить</option><option value="false">Выключить</option></select></label>
+        <button>Применить</button>
+      </form>
+      <h3>Чат</h3>
+      <ul id="messages" class="items chat"></ul>
+      <form id="send" class="controls">
+        <label>Сообщение<input name="text" maxlength="1000" required></label>
+        <button>Отправить</button>
+      </form>
+    </article>
+  </main>
+</body>
+</html>

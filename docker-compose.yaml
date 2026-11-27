@@ -1,4 +1,15 @@
 services:
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://conference:conference-local@db:5432/conference
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.test}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin-demo-2026}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
   db:
     image: postgres:16
     environment:
